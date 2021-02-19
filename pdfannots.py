@@ -1,4 +1,4 @@
-import sys, io, argparse
+import sys, io, argparse, os, datetime
 from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
 from pdfminer.pdfpage import PDFPage
 from pdfminer.layout import LAParams, LTContainer, LTAnno, LTChar, LTTextBox
@@ -6,10 +6,12 @@ from pdfminer.converter import TextConverter
 from pdfminer.pdfparser import PDFParser
 from pdfminer.pdfdocument import PDFDocument, PDFNoOutlines
 from pdfminer.psparser import PSLiteralTable, PSLiteral
-from typing import List
 import pdfminer.pdftypes as pdftypes
 import pdfminer.settings
 import pdfminer.utils
+
+from typing import List
+from pathlib import Path
 
 pdfminer.settings.STRICT = False
 
@@ -249,6 +251,10 @@ class Outline:
         return self.pos < other.pos
 
 
+class NoInputFileError(Exception):
+    pass
+
+
 def format_annotation(annotation, extra=None):
     rawtext = annotation.get_text()
     comment = [l for l in annotation.contents.splitlines() if l] if annotation.contents else []
@@ -281,14 +287,18 @@ class PrettyPrinter:
     Pretty-print the extracted annotations according to the output options.
     """
 
-    def __init__(self, outlines: List[Outline]):
-        """
-        outlines List of outlines
-        """
-        self.outlines = outlines
+    def __init__(self, stem: str):
+        self.stem = stem
 
-    def print_all(self, annotations, outfile):
-        all_items = sorted(self.outlines + annotations)
+    def print_all(self, outlines: List[Outline], annotations: List[Annotation], outfile):
+        # print yaml header
+        print('---', file=outfile)
+        print('categories: Reading Notes', file=outfile)
+        print('title: Reading Notes for ' + self.stem, file=outfile)
+        print('---\n', file=outfile)
+
+        # print outlines and annotations
+        all_items = sorted(outlines + annotations)
         for a in all_items:
             if isinstance(a, Outline):
                 print("#" * a.level + " " + a.title + "\n", file=outfile)
@@ -403,16 +413,16 @@ def process_file(fh):
 
     device.close()
 
-    return all_annotations, outlines
+    return outlines, all_annotations
 
 
 def parse_args():
     p = argparse.ArgumentParser(description=__doc__)
 
-    p.add_argument("input", metavar="INFILE", type=argparse.FileType("rb"),
+    p.add_argument("input", metavar="INFILE", type=argparse.FileType("rb"), default=sys.stdin, nargs='?',
                    help="PDF file to process")
     p.add_argument("-o", metavar="OUTFILE", type=argparse.FileType("w", encoding="UTF-8"), dest="output",
-                   default=sys.stdout, help="output file (default is stdout)")
+                   default=sys.stdout, const=sys.stdout, nargs='?', help="output file (default is stdout)")
     p.add_argument("-n", "--cols", default=1, type=int, metavar="COLS", dest="cols",
                    help="number of columns per page in the document (default: 1)")
 
@@ -421,13 +431,35 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    # reset input file
+    if args.input is sys.stdin:
+        f_list = os.listdir()
+        for f in f_list:
+            suffix = Path(f).suffix
+            if suffix == '.pdf' or suffix == '.PDF':
+                args.input = open(f, "rb")
+                break
+        if args.input is sys.stdin:
+            raise NoInputFileError
+
+    # reset output file
+    stem = Path(args.input.name).stem.strip()
+    args.output = open(str(datetime.date.today()) + '-' + stem + '.md', "w", encoding="UTF-8") if args.output is sys.stdout else args.output
+
+    # reset columns
     global COLUMNS_PER_PAGE
     COLUMNS_PER_PAGE = args.cols
-    annotations, outlines = process_file(args.input)
-    pp = PrettyPrinter(outlines)
-    pp.print_all(annotations, args.output)
+
+    # processing
+    outlines, annotations = process_file(args.input)
+    pp = PrettyPrinter(stem)
+    pp.print_all(outlines, annotations, args.output)
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        main()
+    except NoInputFileError:
+        print("No PDF file under current directory.")
