@@ -332,18 +332,23 @@ def get_outlines(doc, page_list, page_dict) -> List[Outline]:
         # consider targets of the form [page /XYZ left top zoom]
         if dest[1] is PSLiteralTable.intern('XYZ'):
             (page_ref, _, target_x, target_y) = dest[:4]
+        elif dest[1] is PSLiteralTable.intern('Fit'):
+            (page_ref, _) = dest[:2]
+            target_x, target_y = 0, float("inf")
+        else:
+            continue
 
-            if type(page_ref) is int:
-                page = page_list[page_ref]
-            elif isinstance(page_ref, pdftypes.PDFObjRef):
-                page = page_dict[page_ref.objid]
-            else:
-                sys.stderr.write('Warning: unsupported page reference in outline: %s\n' % page_ref)
-                page = None
+        if type(page_ref) is int:
+            page = page_list[page_ref]
+        elif isinstance(page_ref, pdftypes.PDFObjRef):
+            page = page_dict[page_ref.objid]
+        else:
+            sys.stderr.write('Warning: unsupported page reference in outline: %s\n' % page_ref)
+            page = None
 
-            if page:
-                pos = Pos(page, target_x, target_y)
-                result.append(Outline(level, title, dest_name, pos))
+        if page:
+            pos = Pos(page, target_x, target_y)
+            result.append(Outline(level, title, dest_name, pos))
     return result
 
 
