@@ -335,6 +335,9 @@ def get_outlines(doc, page_list, page_dict) -> List[Outline]:
         elif dest[1] is PSLiteralTable.intern('Fit'):
             (page_ref, _) = dest[:2]
             target_x, target_y = 0, float("inf")
+        elif dest[1] is PSLiteralTable.intern('FitH'):
+            page_ref = dest[0]
+            target_x, target_y = 0, float("inf")
         else:
             continue
 
