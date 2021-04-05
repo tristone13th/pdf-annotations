@@ -329,17 +329,28 @@ def get_outlines(doc, page_list, page_dict) -> List[Outline]:
             continue
         dest = resolve_dest(doc, dest_name)
 
-        # consider targets of the form [page /XYZ left top zoom]
+        # The PDF specification knows these destination types:
+        # [page /XYZ left top zoom]
+        # [page /Fit]
+        # [page /FitH top]
+        # [page /FitV left]
+        # [page /FitR left bottom right top]
+        # [page /FitB] (PDF 1.1)
+        # [page /FitBH top] (PDF 1.1)
+        # [page /FitBV left] (PDF 1.1)
+        # ISO 32000-1, Table 151 – Destination syntax)
+        # for more, see: https://stackoverflow.com/questions/43742984/changing-zoom-in-links-in-pdf-files
         if dest[1] is PSLiteralTable.intern('XYZ'):
             (page_ref, _, target_x, target_y) = dest[:4]
-        elif dest[1] is PSLiteralTable.intern('Fit'):
-            (page_ref, _) = dest[:2]
-            target_x, target_y = 0, float("inf")
-        elif dest[1] is PSLiteralTable.intern('FitH'):
-            page_ref = dest[0]
-            target_x, target_y = 0, float("inf")
+        elif dest[1] is PSLiteralTable.intern('FitH') or dest[1] is PSLiteralTable.intern('FitBH'):
+            page_ref, target_y = dest[0], dest[2]
+            target_x = 0
+        elif dest[1] is PSLiteralTable.intern('FitV') or dest[1] is PSLiteralTable.intern('FitBV'):
+            page_ref, target_x = dest[0], dest[2]
+            target_y = float('inf')
         else:
-            continue
+            page_ref = dest[0]
+            target_x, target_y = 0, float('inf')
 
         if type(page_ref) is int:
             page = page_list[page_ref]
