@@ -4,7 +4,7 @@ from pdfminer.pdfpage import PDFPage
 from pdfminer.layout import LAParams, LTContainer, LTAnno, LTChar, LTTextBox
 from pdfminer.converter import TextConverter
 from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument, PDFNoOutlines
+from pdfminer.pdfdocument import PDFDocument, PDFNoOutlines, PDFDestinationNotFound
 from pdfminer.psparser import PSLiteralTable, PSLiteral
 import pdfminer.pdftypes as pdftypes
 import pdfminer.settings
@@ -327,7 +327,12 @@ def get_outlines(doc, page_list, page_dict) -> List[Outline]:
                     dest_name = action.get('D')
         if dest_name is None:
             continue
-        dest = resolve_dest(doc, dest_name)
+
+        # some may not have a link
+        try:
+            dest = resolve_dest(doc, dest_name)
+        except PDFDestinationNotFound:
+            continue
 
         # The PDF specification knows these destination types:
         # [page /XYZ left top zoom]
@@ -348,9 +353,11 @@ def get_outlines(doc, page_list, page_dict) -> List[Outline]:
         elif dest[1] is PSLiteralTable.intern('FitV') or dest[1] is PSLiteralTable.intern('FitBV'):
             page_ref, target_x = dest[0], dest[2]
             target_y = float('inf')
-        else:
+        elif dest[1] is PSLiteralTable.intern('Fit') or dest[1] is PSLiteralTable.intern('FitR') or dest[1] is PSLiteralTable.intern('FitB'):
             page_ref = dest[0]
             target_x, target_y = 0, float('inf')
+        else:
+            continue
 
         if type(page_ref) is int:
             page = page_list[page_ref]
