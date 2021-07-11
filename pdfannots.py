@@ -1,17 +1,22 @@
-import sys, io, argparse, os, datetime
-from pdfminer.pdfinterp import PDFResourceManager, PDFPageInterpreter
-from pdfminer.pdfpage import PDFPage
-from pdfminer.layout import LAParams, LTContainer, LTAnno, LTChar, LTTextBox
-from pdfminer.converter import TextConverter
-from pdfminer.pdfparser import PDFParser
-from pdfminer.pdfdocument import PDFDocument, PDFNoOutlines, PDFDestinationNotFound
-from pdfminer.psparser import PSLiteralTable, PSLiteral
+import argparse
+import datetime
+import io
+import os
+import sys
+from pathlib import Path
+from typing import List
+
 import pdfminer.pdftypes as pdftypes
 import pdfminer.settings
 import pdfminer.utils
-
-from typing import List
-from pathlib import Path
+from pdfminer.converter import TextConverter
+from pdfminer.layout import LAParams, LTAnno, LTChar, LTContainer, LTTextBox
+from pdfminer.pdfdocument import (PDFDestinationNotFound, PDFDocument,
+                                  PDFNoOutlines)
+from pdfminer.pdfinterp import PDFPageInterpreter, PDFResourceManager
+from pdfminer.pdfpage import PDFPage
+from pdfminer.pdfparser import PDFParser
+from pdfminer.psparser import PSLiteral, PSLiteralTable
 
 pdfminer.settings.STRICT = False
 
@@ -28,7 +33,8 @@ SUBSTITUTIONS = {
     u'…': '...',
 }
 
-ANNOTATION_SUBTYPES = frozenset({'Text', 'Highlight', 'Squiggly', 'StrikeOut', 'Underline'})
+ANNOTATION_SUBTYPES = frozenset(
+    {'Text', 'Highlight', 'Squiggly', 'StrikeOut', 'Underline'})
 ANNOTATION_NITS = frozenset({'Squiggly', 'StrikeOut', 'Underline'})
 
 COLUMNS_PER_PAGE = 2  # default only, changed via a command-line parameter
@@ -56,7 +62,8 @@ def box_hit(item, box):
 class RectExtractor(TextConverter):
     def __init__(self, resource_manager, codec='utf-8', page_number=1, la_params=None):
         dummy = io.StringIO()
-        TextConverter.__init__(self, resource_manager, outfp=dummy, codec=codec, pageno=page_number, laparams=la_params)
+        TextConverter.__init__(self, resource_manager, outfp=dummy,
+                               codec=codec, pageno=page_number, laparams=la_params)
         self.annotations = set()
         self._last_hit = frozenset()
         self._cur_line = set()
@@ -71,7 +78,8 @@ class RectExtractor(TextConverter):
         self._cur_line = set()
 
     def test_boxes(self, item):
-        hits = frozenset({a for a in self.annotations if any({box_hit(item, b) for b in a.boxes})})
+        hits = frozenset({a for a in self.annotations if any(
+            {box_hit(item, b) for b in a.boxes})})
         self._last_hit = hits
         self._cur_line.update(hits)
         return hits
@@ -180,17 +188,18 @@ class Annotation:
         self.rect = rect
         self.author = author
         self.text = ''
-
         if coords is None:
             self.boxes = None
         else:
             assert len(coords) % 8 == 0
             self.boxes = []
             while coords:
-                (x0, y0, x1, y1, x2, y2, x3, y3), coords = coords[:8], coords[8:]
+                (x0, y0, x1, y1, x2, y2, x3,
+                 y3), coords = coords[:8], coords[8:]
                 x_values = (x0, x1, x2, x3)
                 y_values = (y0, y1, y2, y3)
-                box = (min(x_values), min(y_values), max(x_values), max(y_values))
+                box = (min(x_values), min(y_values),
+                       max(x_values), max(y_values))
                 self.boxes.append(box)
 
     def capture(self, text):
@@ -255,9 +264,15 @@ class NoInputFileError(Exception):
     pass
 
 
+sub_dict = {
+    '_': '\\_'
+}
+
+
 def format_annotation(annotation, extra=None):
     rawtext = annotation.get_text()
-    comment = [l for l in annotation.contents.splitlines() if l] if annotation.contents else []
+    comment = [l for l in annotation.contents.splitlines(
+    ) if l] if annotation.contents else []
     text = [l for l in rawtext.strip().splitlines() if l] if rawtext else []
 
     # we are either printing: item text and item contents, or one of the two
@@ -265,7 +280,8 @@ def format_annotation(annotation, extra=None):
     assert text or comment
 
     # compute the formatted position (and extra bit if needed) as a label
-    label = "Page %d (%s)." % (annotation.page.page_number + 1, extra if extra else "")
+    label = "Page %d (%s)." % (
+        annotation.page.page_number + 1, extra if extra else "")
 
     ret = " * "
     if comment:
@@ -279,16 +295,38 @@ def format_annotation(annotation, extra=None):
             ret += "\n"
     else:
         ret += " | " + label + "\n"
+    for ori, new in sub_dict.items():
+        ret = ret.replace(ori, new)
     return ret
+
+
+def filter(all_items: List) -> List:
+    """Drop the outlines with no content.
+    """
+    stack = []
+    res = []
+    for item in all_items:
+        if not isinstance(item, Outline):
+            res.extend(stack)
+            res.append(item)
+            stack = []
+            continue
+        while stack and item.level <= stack[-1].level:
+            stack.pop()
+        stack.append(item)
+    return res
 
 
 class PrettyPrinter:
     """
     Pretty-print the extracted annotations according to the output options.
+    strict_mode: Regardless of whether there is an annotation below,
+                 the outline should be output in the form of a markdown header.
     """
 
-    def __init__(self, stem: str):
+    def __init__(self, stem: str, strict_mode: bool = False):
         self.stem = stem
+        self.strict_mode = strict_mode
 
     def print_all(self, outlines: List[Outline], annotations: List[Annotation], outfile):
         # print yaml header
@@ -299,8 +337,13 @@ class PrettyPrinter:
 
         # print outlines and annotations
         all_items = sorted(outlines + annotations)
+        if not self.strict_mode:
+            all_items = filter(all_items)
+
         for a in all_items:
             if isinstance(a, Outline):
+                for ori, new in sub_dict.items():
+                    a.title = a.title.replace(ori, new)
                 print("#" * a.level + " " + a.title + "\n", file=outfile)
             else:
                 print(format_annotation(a, a.tag_name), file=outfile)
@@ -364,7 +407,8 @@ def get_outlines(doc, page_list, page_dict) -> List[Outline]:
         elif isinstance(page_ref, pdftypes.PDFObjRef):
             page = page_dict[page_ref.objid]
         else:
-            sys.stderr.write('Warning: unsupported page reference in outline: %s\n' % page_ref)
+            sys.stderr.write(
+                'Warning: unsupported page reference in outline: %s\n' % page_ref)
             page = None
 
         if page:
@@ -392,7 +436,8 @@ def get_annotations(pdf_annotations, page):
         author = pdftypes.resolve1(pa.get('T'))
         if author is not None:
             author = pdfminer.utils.decode_text(author)
-        a = Annotation(page, subtype.name, coords, rect, contents, author=author)
+        a = Annotation(page, subtype.name, coords,
+                       rect, contents, author=author)
         annotations.append(a)
 
     return annotations
@@ -471,7 +516,8 @@ def main():
 
     # reset output file
     stem = Path(args.input.name).stem.strip()
-    args.output = open(str(datetime.date.today()) + '-' + stem + '.md', "w", encoding="UTF-8") if args.output is sys.stdout else args.output
+    args.output = open(str(datetime.date.today()) + '-' + stem + '.md',
+                       "w", encoding="UTF-8") if args.output is sys.stdout else args.output
 
     # reset columns
     global COLUMNS_PER_PAGE
