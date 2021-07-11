@@ -283,18 +283,18 @@ def format_annotation(annotation, extra=None):
     label = "Page %d (%s)." % (
         annotation.page.page_number + 1, extra if extra else "")
 
-    ret = " * "
+    ret = ""
     if comment:
         ret += '\n'.join(comment)
     if text:
-        ret += '\n'
+        ret += '\n\n'
         for index, para in enumerate(text):
-            ret += "   > " + para
+            ret += "> " + para
             if index == len(text) - 1:
-                ret += " | " + label
+                ret += " \\| " + label
             ret += "\n"
     else:
-        ret += " | " + label + "\n"
+        ret += " \\| " + label + "\n"
     for ori, new in sub_dict.items():
         ret = ret.replace(ori, new)
     return ret
@@ -331,7 +331,7 @@ class PrettyPrinter:
     def print_all(self, outlines: List[Outline], annotations: List[Annotation], outfile):
         # print yaml header
         print('---', file=outfile)
-        print('categories: Reading Notes', file=outfile)
+        print('categories: Notes', file=outfile)
         print('title: Reading Notes for ' + self.stem, file=outfile)
         print('---\n', file=outfile)
 
