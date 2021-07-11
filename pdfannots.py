@@ -265,7 +265,10 @@ class NoInputFileError(Exception):
 
 
 sub_dict = {
-    '_': '\\_'
+    '_': '\\_',
+    '$': '\\$',
+    '{': '\\{',
+    '}': '\\}',
 }
 
 
@@ -286,6 +289,9 @@ def format_annotation(annotation, extra=None):
     ret = ""
     if comment:
         ret += '\n'.join(comment)
+    else:
+        assert text
+        ret += '\n'.join(text)
     if text:
         ret += '\n\n'
         for index, para in enumerate(text):
